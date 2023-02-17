@@ -21,7 +21,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 from lib.utils import mkdir_p, get_rank, load_model_weights
 from models.DAMSM import RNN_ENCODER, CNN_ENCODER
-from models.GAN import NetG, NetD, NetC
+from models.GAN import NetG, NetD
 
 ###########   preparation   ############
 def prepare_models(args):
@@ -48,9 +48,8 @@ def prepare_models(args):
         p.requires_grad = False
     text_encoder.eval()
     # GAN models
-    netG = NetG(args.nf, args.z_dim, args.cond_dim, args.imsize, args.ch_size).to(device)
-    netD = NetD(args.nf, args.imsize, args.ch_size).to(device)
-    netC = NetC(args.nf, args.cond_dim).to(device)
+    netG = NetG(args.GAN.GF_DIM, args.TEXT.EMBEDDING_DIM, args.GAN.CONDITION_DIM, args.GAN.Z_DIM).to(device)
+    netD = NetD(args.GAN.DF_DIM, args.TEXT.EMBEDDING_DIM).to(device)
     if (args.multi_gpus) and (args.train):
         print("Let's use", torch.cuda.device_count(), "GPUs!")
         netG = torch.nn.parallel.DistributedDataParallel(netG, broadcast_buffers=False,
@@ -59,21 +58,13 @@ def prepare_models(args):
         netD = torch.nn.parallel.DistributedDataParallel(netD, broadcast_buffers=False,
                                                           device_ids=[local_rank],
                                                           output_device=local_rank, find_unused_parameters=True)
-        netC = torch.nn.parallel.DistributedDataParallel(netC, broadcast_buffers=False,
-                                                          device_ids=[local_rank],
-                                                          output_device=local_rank, find_unused_parameters=True)
-    return image_encoder, text_encoder, netG, netD, netC
+    return image_encoder, text_encoder, netG, netD
 
 
 def prepare_dataset(args, split, transform):
     imsize = args.imsize
     if transform is not None:
         image_transform = transform
-    elif args.CONFIG_NAME.find('CelebA') != -1:
-        image_transform = transforms.Compose([
-            transforms.Resize(int(imsize)),
-            transforms.RandomCrop(imsize),
-            transforms.RandomHorizontalFlip()])
     else:
         image_transform = transforms.Compose([
             transforms.Resize(int(imsize * 76 / 64)),

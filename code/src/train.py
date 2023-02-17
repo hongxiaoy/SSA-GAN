@@ -72,7 +72,7 @@ def main(args):
     # prepare dataloader, models, data
     train_dl, valid_dl ,train_ds, valid_ds, sampler = prepare_dataloaders(args)
     args.vocab_size = train_ds.n_words
-    image_encoder, text_encoder, netG, netD, netC = prepare_models(args)
+    image_encoder, text_encoder, netG, netD = prepare_models(args)
     fixed_img, fixed_sent, fixed_z = get_fix_data(train_dl, valid_dl, text_encoder, args)
     if (args.multi_gpus==True) and (get_rank() != 0):
         None
@@ -160,5 +160,9 @@ if __name__ == "__main__":
             args.device = torch.device("cuda")
     else:
         args.device = torch.device('cpu')
+    
+    # torch.backends.cudnn.benchmark = True
+    # torch.backends.cudnn.deterministic = True
+    
     main(args)
 

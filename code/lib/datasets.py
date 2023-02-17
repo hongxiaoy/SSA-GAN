@@ -42,7 +42,7 @@ def get_fix_data(train_dl, test_dl, text_encoder, args):
 
 
 def prepare_data(data, text_encoder):
-    imgs, captions, caption_lens, keys = data
+    imgs, captions, caption_lens, class_ids, keys = data
     captions, sorted_cap_lens, sorted_cap_idxs = sort_sents(captions, caption_lens)
     sent_emb, words_embs = encode_tokens(text_encoder, captions, sorted_cap_lens)
     sent_emb = rm_sort(sent_emb, sorted_cap_idxs)
@@ -98,9 +98,10 @@ def get_imgs(img_path, bbox=None, transform=None, normalize=None):
         img = normalize(img)
     return img
 
-################################################################
-#                    Dataset
-################################################################
+
+# ############################################################### #
+#                             Dataset                             #
+# ############################################################### #
 class TextImgDataset(data.Dataset):
     def __init__(self, split='train', transform=None, args=None):
         self.transform = transform
@@ -153,7 +154,7 @@ class TextImgDataset(data.Dataset):
         for i in range(len(filenames)):
             cap_path = '%s/text/%s.txt' % (data_dir, filenames[i])
             with open(cap_path, "r") as f:
-                captions = f.read().encode('utf-8').decode('utf8').split('\n')
+                captions = f.read().split('\n')
                 cnt = 0
                 for cap in captions:
                     if len(cap) == 0:
@@ -292,6 +293,38 @@ class TextImgDataset(data.Dataset):
             x_len = self.word_num
         return x, x_len
 
+    def get_mis_caption(self, cls_id):
+        """Get 99 unmatched captions.
+
+        Args:
+            cls_id (int): The class id of the image, not find its class captions.
+
+        Returns:
+            tuple: 99 unmatched captions, and its cap lengths.
+        """
+        mis_match_captions_t = []
+        mis_match_captions = torch.zeros(99, self.word_num)
+        mis_match_captions_len = torch.zeros(99)
+        i = 0
+        while len(mis_match_captions_t) < 99:  # when not achieve 99
+            # random get one idx
+            idx = random.randint(0, self.number_example)
+            if cls_id == self.class_id[idx]:
+                continue
+            # random get 1 caption of 10
+            sent_ix = random.randint(0, self.embeddings_num)
+            new_sent_ix = idx * self.embeddings_num + sent_ix
+            cap_t, cap_len_t = self.get_caption(new_sent_ix)
+            # get 1 unmatched cap and its len
+            mis_match_captions_t.append(torch.from_numpy(cap_t).squeeze())
+            mis_match_captions_len[i] = cap_len_t
+            i = i +1
+        sorted_cap_lens, sorted_cap_indices = torch.sort(mis_match_captions_len, 0, True)
+
+        for i in range(99):
+            mis_match_captions[i,:] = mis_match_captions_t[sorted_cap_indices[i]]
+        return mis_match_captions.type(torch.LongTensor).cuda(), sorted_cap_lens.type(torch.LongTensor).cuda()
+
     def __getitem__(self, index):
         #
         key = self.filenames[index]
@@ -309,16 +342,6 @@ class TextImgDataset(data.Dataset):
                 img_name = '%s/images/train2014/%s.jpg' % (data_dir, key)
             else:
                 img_name = '%s/images/val2014/%s.jpg' % (data_dir, key)
-        elif self.dataset_name.find('flower') != -1:
-            if self.split=='train':
-                img_name = '%s/oxford-102-flowers/images/%s.jpg' % (data_dir, key)
-            else:
-                img_name = '%s/oxford-102-flowers/images/%s.jpg' % (data_dir, key)
-        elif self.dataset_name.find('CelebA') != -1:
-            if self.split=='train':
-                img_name = '%s/image/CelebA-HQ-img/%s.jpg' % (data_dir, key)
-            else:
-                img_name = '%s/image/CelebA-HQ-img/%s.jpg' % (data_dir, key)
         else:
             img_name = '%s/images/%s.jpg' % (data_dir, key)
 
@@ -327,7 +350,7 @@ class TextImgDataset(data.Dataset):
         sent_ix = random.randint(0, self.embeddings_num)
         new_sent_ix = index * self.embeddings_num + sent_ix
         caps, cap_len = self.get_caption(new_sent_ix)
-        return imgs, caps, cap_len, key
+        return imgs, caps, cap_len, cls_id, key
 
     def __len__(self):
         return len(self.filenames)
