@@ -22,15 +22,21 @@ else:
 from .utils import truncated_noise
 
 
-def get_one_batch_data(dataloader, text_encoder, args):
+def get_one_batch_data_DF_GAN(dataloader, text_encoder, args):
     data = next(iter(dataloader))
-    imgs, sent_emb, words_embs, keys = prepare_data(data, text_encoder)
+    imgs, sent_emb, words_embs = prepare_data_DF_GAN(data, text_encoder)
     return imgs, words_embs, sent_emb
 
 
-def get_fix_data(train_dl, test_dl, text_encoder, args):
-    fixed_image_train, fixed_word_train, fixed_sent_train = get_one_batch_data(train_dl, text_encoder, args)
-    fixed_image_test, fixed_word_test, fixed_sent_test = get_one_batch_data(test_dl, text_encoder, args)
+def get_one_batch_data(dataloader, text_encoder, args):
+    data = next(iter(dataloader))
+    # imgs, captions, sorted_cap_lens, class_ids, sent_emb, words_embs, keys
+    return prepare_data(data, text_encoder)
+
+
+def get_fix_data_DF_GAN(train_dl, test_dl, text_encoder, args):
+    fixed_image_train, fixed_word_train, fixed_sent_train = get_one_batch_data_DF_GAN(train_dl, text_encoder, args)
+    fixed_image_test, fixed_word_test, fixed_sent_test = get_one_batch_data_DF_GAN(test_dl, text_encoder, args)
     fixed_image = torch.cat((fixed_image_train, fixed_image_test), dim=0)
     fixed_sent = torch.cat((fixed_sent_train, fixed_sent_test), dim=0)
     if args.truncation==True:
@@ -41,22 +47,64 @@ def get_fix_data(train_dl, test_dl, text_encoder, args):
     return fixed_image, fixed_sent, fixed_noise
 
 
-def prepare_data(data, text_encoder):
+def get_fix_data(train_dl, test_dl, text_encoder, args):
+    # imgs, captions, sorted_cap_lens, class_ids, sent_emb, words_embs, keys
+    train_batch_data = get_one_batch_data(train_dl, text_encoder, args)
+    test_batch_data = get_one_batch_data(test_dl, text_encoder, args)
+    
+    fixed_image_train = train_batch_data[0]
+    fixed_word_train = train_batch_data[-2]
+    fixed_sent_train = train_batch_data[-2]
+    
+    fixed_image_test = test_batch_data[0]
+    fixed_word_test = test_batch_data[-2]
+    fixed_sent_test = test_batch_data[-3]
+    
+    fixed_image = torch.cat((fixed_image_train, fixed_image_test), dim=0)
+    fixed_sent = torch.cat((fixed_sent_train, fixed_sent_test), dim=0)
+    if args.truncation==True:
+        noise = truncated_noise(fixed_image.size(0), args.z_dim, args.trunc_rate)
+        fixed_noise = torch.tensor(noise, dtype=torch.float).to(args.device)
+    else:
+        fixed_noise = torch.randn(fixed_image.size(0), args.z_dim).to(args.device)
+    return fixed_image, fixed_sent, fixed_noise
+
+
+def prepare_data_DF_GAN(data, text_encoder):
     imgs, captions, caption_lens, class_ids, keys = data
     captions, sorted_cap_lens, sorted_cap_idxs = sort_sents(captions, caption_lens)
     sent_emb, words_embs = encode_tokens(text_encoder, captions, sorted_cap_lens)
     sent_emb = rm_sort(sent_emb, sorted_cap_idxs)
     words_embs = rm_sort(words_embs, sorted_cap_idxs)
-    imgs = Variable(imgs).cuda()
-    return imgs, sent_emb, words_embs, keys
+    imgs = imgs.cuda()
+    return imgs, sent_emb, words_embs
+
+
+def prepare_data(data, text_encoder):
+    imgs, captions, caption_lens, class_ids, keys = data
+    # imgs: (bs, 3, 256, 256)
+    # captions: (bs, 18, 1)
+    # captions_lens: (bs,)
+    # class_ids: (bs,)
+    captions, sorted_cap_lens, sorted_cap_idxs = sort_sents(captions, caption_lens)
+    imgs = imgs[sorted_cap_idxs]
+    class_ids = class_ids[sorted_cap_idxs].numpy()
+    keys = [keys[i] for i in sorted_cap_idxs.numpy()]
+    # words_embs: batch_size x nef x seq_len
+    # sent_emb: batch_size x nef
+    sent_emb, words_embs = encode_tokens(text_encoder, captions, sorted_cap_lens)
+    # sent_emb = rm_sort(sent_emb, sorted_cap_idxs)
+    # words_embs = rm_sort(words_embs, sorted_cap_idxs)
+    imgs = imgs.cuda()
+    return imgs, captions, sorted_cap_lens, class_ids, sent_emb, words_embs, keys
 
 
 def sort_sents(captions, caption_lens):
     # sort data by the length in a decreasing order
     sorted_cap_lens, sorted_cap_indices = torch.sort(caption_lens, 0, True)
     captions = captions[sorted_cap_indices].squeeze()
-    captions = Variable(captions).cuda()
-    sorted_cap_lens = Variable(sorted_cap_lens).cuda()
+    captions = captions.cuda()
+    sorted_cap_lens = sorted_cap_lens.cuda()
     return captions, sorted_cap_lens, sorted_cap_indices
 
 
@@ -67,6 +115,8 @@ def encode_tokens(text_encoder, caption, cap_lens):
             hidden = text_encoder.module.init_hidden(caption.size(0))
         else:
             hidden = text_encoder.init_hidden(caption.size(0))
+        # words_embs: bs x nef x seq_len
+        # sent_emb: bs x nef
         words_embs, sent_emb = text_encoder(caption, cap_lens, hidden)
         words_embs, sent_emb = words_embs.detach(), sent_emb.detach()
     return sent_emb, words_embs 
