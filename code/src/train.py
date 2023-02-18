@@ -73,7 +73,7 @@ def main(args):
     train_dl, valid_dl ,train_ds, valid_ds, sampler = prepare_dataloaders(args)
     args.vocab_size = train_ds.n_words
     image_encoder, text_encoder, netG, netD = prepare_models(args)
-    fixed_img, fixed_sent, fixed_z = get_fix_data(train_dl, valid_dl, text_encoder, args)
+    fixed_img, fixed_sent, fixed_words, fixed_z = get_fix_data(train_dl, valid_dl, text_encoder, args)
     if (args.multi_gpus==True) and (get_rank() != 0):
         None
     else:
@@ -84,7 +84,7 @@ def main(args):
         vutils.save_image(fixed_img.data, img_save_path, nrow=8, normalize=True)
     # prepare optimizer
     optimizerG = torch.optim.Adam(netG.parameters(), lr=0.0001, betas=(0.0, 0.9))
-    D_params = list(netD.parameters()) + list(netC.parameters())
+    D_params = list(netD.parameters())
     optimizerD = torch.optim.Adam(D_params, lr=0.0004, betas=(0.0, 0.9))
     m1, s1 = load_npz(args.npz_path)
     # load from checkpoint
@@ -92,7 +92,7 @@ def main(args):
     if args.resume_epoch!=1:
         strat_epoch = args.resume_epoch+1
         path = osp.join(args.resume_model_path, 'state_epoch_%03d.pth'%(args.resume_epoch))
-        netG, netD, netC, optimizerG, optimizerD = load_model_opt(netG, netD, netC, optimizerG, optimizerD, path, args.multi_gpus)
+        netG, netD, optimizerG, optimizerD = load_model_opt(netG, netD, optimizerG, optimizerD, path, args.multi_gpus)
     # print args
     if (args.multi_gpus==True) and (get_rank() != 0):
         None
@@ -101,6 +101,7 @@ def main(args):
         arg_save_path = osp.join(log_dir, 'args.yaml')
         save_args(arg_save_path, args)
         print("Start Training")
+    
     # Start training
     test_interval,gen_interval,save_interval = args.test_interval,args.gen_interval,args.save_interval
     #torch.cuda.empty_cache()
@@ -111,19 +112,19 @@ def main(args):
         # training
         args.current_epoch = epoch
         torch.cuda.empty_cache()
-        train(train_dl, netG, netD, netC, text_encoder, optimizerG, optimizerD, args)
+        train(train_dl, netG, netD, image_encoder, text_encoder, optimizerG, optimizerD, args)
         #torch.cuda.empty_cache()
         # save
         if epoch%save_interval==0:
-            save_models(netG, netD, netC, optimizerG, optimizerD, epoch, args.multi_gpus, args.model_save_file)
+            save_models(netG, netD, optimizerG, optimizerD, epoch, args.multi_gpus, args.model_save_file)
         # sample
         if epoch%gen_interval==0:
-            sample(fixed_z, fixed_sent, netG, args.multi_gpus, epoch, args.img_save_dir, writer)
+            sample(fixed_z, fixed_sent, fixed_words, netG, args.multi_gpus, epoch, args.img_save_dir, writer)
         # end epoch
         # test
         if epoch%test_interval==0:
             torch.cuda.empty_cache()
-            fid = test(valid_dl, text_encoder, netG, args.device, m1, s1, epoch, args.max_epoch, \
+            fid = test(args, valid_dl, text_encoder, netG, args.device, m1, s1, epoch, args.max_epoch, \
                         args.sample_times, args.z_dim, args.batch_size, args.truncation, args.trunc_rate)
         if (args.multi_gpus==True) and (get_rank() != 0):
             None

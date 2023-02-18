@@ -4,6 +4,7 @@ dataset_name: birds
 data_dir: ../data/birds
 
 gpu_id: 0
+num_workers: 16
 imsize: 256
 z_dim: 100
 cond_dim: 256
@@ -12,16 +13,16 @@ cuda: True
 
 stamp: 'normal'
 state_epoch: 0
-max_epoch: 1301
-batch_size: 32
+max_epoch: 800
+batch_size: 16
 nf: 32
 ch_size: 3
 
 model: base
 
 gen_interval: 1
-test_interval: 10
-save_interval: 10
+test_interval: 1
+save_interval: 1
 
 truncation: True
 trunc_rate: 0.88
@@ -40,3 +41,22 @@ TEXT:
     EMBEDDING_DIM: 256
     CAPTIONS_PER_IMAGE: 10
     DAMSM_NAME: ../data/birds/DAMSMencoder/text_encoder200.pth
+
+TRAIN:
+    FLAG: True
+    NET_GEN: ''  # '../models/bird_AttnGAN2.pth'
+    B_NET_D: True
+    DISCRIMINATOR_LR: 0.0005
+    GENERATOR_LR: 0.0005
+    SMOOTH:
+        GAMMA1: 4.0  # 1,2,5 good 4 best  10&100bad
+        GAMMA2: 5.0
+        GAMMA3: 10.0  # 10good 1&100bad
+        LAMBDA: 5.0
+
+GAN:
+    DF_DIM: 32
+    GF_DIM: 64
+    Z_DIM: 100
+    RES_NUM: 3
+    CONDITION_DIM: 100

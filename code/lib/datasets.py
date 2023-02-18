@@ -54,7 +54,7 @@ def get_fix_data(train_dl, test_dl, text_encoder, args):
     
     fixed_image_train = train_batch_data[0]
     fixed_word_train = train_batch_data[-2]
-    fixed_sent_train = train_batch_data[-2]
+    fixed_sent_train = train_batch_data[-3]
     
     fixed_image_test = test_batch_data[0]
     fixed_word_test = test_batch_data[-2]
@@ -62,12 +62,13 @@ def get_fix_data(train_dl, test_dl, text_encoder, args):
     
     fixed_image = torch.cat((fixed_image_train, fixed_image_test), dim=0)
     fixed_sent = torch.cat((fixed_sent_train, fixed_sent_test), dim=0)
+    fixed_words = torch.cat((fixed_word_train, fixed_word_test), dim=0)
     if args.truncation==True:
         noise = truncated_noise(fixed_image.size(0), args.z_dim, args.trunc_rate)
         fixed_noise = torch.tensor(noise, dtype=torch.float).to(args.device)
     else:
         fixed_noise = torch.randn(fixed_image.size(0), args.z_dim).to(args.device)
-    return fixed_image, fixed_sent, fixed_noise
+    return fixed_image, fixed_sent, fixed_words, fixed_noise
 
 
 def prepare_data_DF_GAN(data, text_encoder):
