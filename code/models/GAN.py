@@ -142,7 +142,7 @@ class GEN_Module_1(nn.Module):
         self.gf_dim = ngf
         self.ef_dim = nef
         self.cf_dim = ncf
-        self.num_residual = res_num  # cfg.GAN.RES_NUM
+        self.num_residual = res_num
         self.size = size
         
         ngf = self.gf_dim
@@ -169,7 +169,7 @@ class GEN_Module_1(nn.Module):
         ws = self.W_s(sent_emb).unsqueeze(-1)  # (N, 64*64)
         R = torch.bmm(h_code_flat, ws).softmax(dim=1).repeat(1, 1, h_code_flat.shape[-1])
         h_star = torch.mul(R, h_code_flat)
-        h_concat = torch.concat([h_star, h_code_flat], dim=1)
+        h_concat = torch.cat([h_star, h_code_flat], dim=1)
         h_concat = h_concat.view(bs, -1, ih, iw).contiguous()
         
         out_code = self.residual(h_concat)
@@ -228,7 +228,7 @@ class GEN_Module_2(nn.Module):
 
         c = torch.matmul(attn_weights, e_prime.permute(0, 2, 1)).permute(0, 2, 1)  # (N, 128, 128*128)
         c = c.view(bs, -1, ih, iw)  # (N, 128, 128, 128)
-        im_feat_concat = torch.concat([c, h_code], dim=1)
+        im_feat_concat = torch.cat([c, h_code], dim=1)
         
         # print(f'h_code shape: {h_code.shape}')
         # print(f'h_code_flat shape: {h_code_flat.shape}')
@@ -247,22 +247,22 @@ class GEN_Module_2(nn.Module):
 
 
 class NetG(nn.Module):
-    def __init__(self, ngf, nef, ncf, z_dim):
+    def __init__(self, ngf, nef, ncf, z_dim, res_num):
         super(NetG, self).__init__()
         self.ngf = ngf
         self.nef = nef
         self.ncf = ncf
-        self.ca_net = CA()
+        self.ca_net = CA(nef, z_dim)
 
         
         self.h_net1 = GEN_Module_0(z_dim, ngf * 16, ncf)
         # self.img_net1 = GET_IMAGE_G(ngf)
 
         # gf x 64 x 64
-        self.h_net2 = GEN_Module_1(ngf, nef, ncf, 64)
+        self.h_net2 = GEN_Module_1(ngf, nef, ncf, 64, res_num)
         # self.img_net2 = GET_IMAGE_G(ngf)
 
-        self.h_net3 = GEN_Module_2(ngf, nef, ncf, 128)
+        self.h_net3 = GEN_Module_2(ngf, nef, ncf, 128, res_num)
         self.img_net3 = GET_IMAGE_G(ngf)
 
     def forward(self, z_code, sent_emb, word_embs, mask, cap_lens):
@@ -276,21 +276,21 @@ class NetG(nn.Module):
 
         c_code, mu, logvar = self.ca_net(sent_emb)
 
-        h_code1 = self.h_net1(z_code, c_code)  # (10, 128, 64, 64)
+        h_code1 = self.h_net1(z_code, c_code)  # (32, 64, 64, 64)
         # print(h_code1.shape)
         # fake_img1 = self.img_net1(h_code1)
         # fake_imgs.append(fake_img1)
         
-        h_code2 = self.h_net2(h_code1, c_code, sent_emb, word_embs, mask, cap_lens)  # (10, 64, 128, 128)
+        h_code2 = self.h_net2(h_code1, c_code, sent_emb, word_embs, mask, cap_lens)  # (32, 64, 128, 128)
         # print(h_code2.shape)
         # fake_img2 = self.img_net2(h_code2)
         # fake_imgs.append(fake_img2)
         # if att1 is not None:
         #     att_maps.append(att1)
         
-        h_code3 = self.h_net3(h_code2, c_code, sent_emb, word_embs, mask, cap_lens)  # (10, 128, 256, 256)
+        h_code3 = self.h_net3(h_code2, c_code, sent_emb, word_embs, mask, cap_lens)  # (32, 64, 256, 256)
         # print(h_code3.shape)
-        fake_img3 = self.img_net3(h_code3)  # (10, 3, 256, 256)
+        fake_img3 = self.img_net3(h_code3)  # (32, 3, 256, 256)
         # if att2 is not None:
         #     att_maps.append(att2)
         
@@ -384,9 +384,7 @@ class DIS_GET_LOGITS(nn.Module):
             self.s_jointConv = None
             self.f_jointConv = Block3x3_leakyrelu(ndf * 8 * 2, ndf * 8)
 
-        self.outlogits = nn.Sequential(
-            nn.Conv2d(ndf * 8, 1, kernel_size=4, stride=4),
-            nn.Sigmoid())
+        self.outlogits = nn.Conv2d(ndf * 8, 1, kernel_size=4, stride=4)
 
     def forward(self, h_code, c_code_s=None, c_code_f=None):
         if self.s_condition and c_code_s is not None:
@@ -407,11 +405,11 @@ class DIS_GET_LOGITS(nn.Module):
             h_c_code = h_code
 
         output = self.outlogits(h_c_code)
-        return output.view(-1)
+        return output.view(-1, 1)
 
 
 class NetD(nn.Module):
-    def __init__(self, ndf, nef, uncon=True):
+    def __init__(self, ndf, nef):
         """Discriminator for 256 x 256 images."""
         super(NetD, self).__init__()
         self.ndf = ndf
@@ -421,17 +419,15 @@ class NetD(nn.Module):
         self.img_code_s64 = DownBlock(ndf * 16, ndf * 32)
         self.img_code_s64_1 = Block3x3_leakyrelu(ndf * 32, ndf * 16)
         self.img_code_s64_2 = Block3x3_leakyrelu(ndf * 16, ndf * 8)
-        if uncon:
-            self.UNCOND_DNET = DIS_GET_LOGITS(ndf, nef)
-        else:
-            self.UNCOND_DNET = None
+        self.UNCOND_DNET = DIS_GET_LOGITS(ndf, nef)
         self.S_COND_DNET = DIS_GET_LOGITS(ndf, nef, s_condition=True)
         self.F_COND_DNET = DIS_GET_LOGITS(ndf, nef, f_condition=True)
 
     def forward(self, x_var):
-        x_code16 = self.img_code_s16(x_var)
-        x_code8 = self.img_code_s32(x_code16)
-        x_code4 = self.img_code_s64(x_code8)
-        x_code4 = self.img_code_s64_1(x_code4)
-        x_code4 = self.img_code_s64_2(x_code4)
+        x_code16 = self.img_code_s16(x_var)  # (bs, 256, 16, 16)
+        x_code8 = self.img_code_s32(x_code16)  # (bs, 512, 8, 8)
+        x_code4 = self.img_code_s64(x_code8)  # (bs, 1024, 4, 4)
+        x_code4 = self.img_code_s64_1(x_code4)  # (bs, 512, 4, 4)
+        x_code4 = self.img_code_s64_2(x_code4)  # (bs, 256, 4, 4)
+        
         return x_code4

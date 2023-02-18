@@ -13,16 +13,16 @@ cuda: True
 
 stamp: 'normal'
 state_epoch: 0
-max_epoch: 1301
-batch_size: 32
+max_epoch: 800
+batch_size: 16
 nf: 32
 ch_size: 3
 
 model: base
 
 gen_interval: 1
-test_interval: 10
-save_interval: 10
+test_interval: 1
+save_interval: 1
 
 truncation: True
 trunc_rate: 0.88
@@ -46,6 +46,7 @@ TRAIN:
     FLAG: True
     NET_GEN: ''  # '../models/bird_AttnGAN2.pth'
     B_NET_D: True
+<<<<<<< HEAD
     BATCH_SIZE: 20  # 22
     MAX_EPOCH: 600
     SNAPSHOT_INTERVAL: 10
@@ -53,6 +54,10 @@ TRAIN:
     GENERATOR_LR: 0.0005
     #
     TEXT_ENC: '../DAMSMencoders/bird/text_encoder200.pth'
+=======
+    DISCRIMINATOR_LR: 0.0005
+    GENERATOR_LR: 0.0005
+>>>>>>> ad96f4a352e5e956e392ced1bb15ed35eb24d38f
     SMOOTH:
         GAMMA1: 4.0  # 1,2,5 good 4 best  10&100bad
         GAMMA2: 5.0
@@ -64,4 +69,8 @@ GAN:
     GF_DIM: 64
     Z_DIM: 100
     RES_NUM: 3
+<<<<<<< HEAD
 
+=======
+    CONDITION_DIM: 100
+>>>>>>> ad96f4a352e5e956e392ced1bb15ed35eb24d38f

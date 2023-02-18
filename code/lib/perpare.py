@@ -48,7 +48,7 @@ def prepare_models(args):
         p.requires_grad = False
     text_encoder.eval()
     # GAN models
-    netG = NetG(args.GAN.GF_DIM, args.TEXT.EMBEDDING_DIM, args.GAN.CONDITION_DIM, args.GAN.Z_DIM).to(device)
+    netG = NetG(args.GAN.GF_DIM, args.TEXT.EMBEDDING_DIM, args.GAN.CONDITION_DIM, args.GAN.Z_DIM, args.GAN.RES_NUM).to(device)
     netD = NetD(args.GAN.DF_DIM, args.TEXT.EMBEDDING_DIM).to(device)
     if (args.multi_gpus) and (args.train):
         print("Let's use", torch.cuda.device_count(), "GPUs!")
